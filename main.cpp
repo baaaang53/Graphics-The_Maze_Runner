@@ -69,6 +69,7 @@ unsigned int tSize = sizeof(textcood);
 unsigned int nSize = sizeof(normals);
 unsigned int cSize = sizeof(colors);;
 
+float lastTime = 0.0f;
 // for camera
 glm::vec3 cameraOrigPos(0.0f, 23.0f, 18.0f);
 glm::vec3 cameraPos;
@@ -80,10 +81,7 @@ float arcballSpeed = 0.1f;
 static Arcball camArcBall(SCR_WIDTH, SCR_HEIGHT, arcballSpeed, true, true);
 
 // for texture
-unsigned int cubeTexture;
-unsigned int floorTexture;
-unsigned int characTexture;
-unsigned int itemTexture;
+unsigned int cubeTexture, floorTexture, characTexture, itemTexture, finishTexture;
 
 // for outline
 float outlineScale = 1.1f;
@@ -338,10 +336,11 @@ int main()
 
 	// load textures
 	// -------------
-	cubeTexture = loadTexture("wall.png");
-	floorTexture = loadTexture("floor.png");
+	cubeTexture = loadTexture("stonewall2.png");
+	floorTexture = loadTexture("metal.png");
     characTexture = loadTexture("smile.png");
     itemTexture = loadTexture("shiny.png");
+    finishTexture = loadTexture("finish.png");
 
 	shader->use();
 	shader->setInt("texture1", 0);
@@ -365,8 +364,8 @@ void render() {
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
     glEnable(GL_DEPTH_TEST);
     glDisable(GL_STENCIL_TEST);
-	// InClass09 here
 
+    float currentTime = glfwGetTime();
 	// send view to shader
 	view = glm::lookAt(cameraPos, camTarget, camUp);
 	view = view * camArcBall.createRotationMatrix();
@@ -384,6 +383,15 @@ void render() {
 	model = glm::scale(model, glm::vec3(19.0f, 19.0f, 0.0f));
 	shader->setMat4("model", model);
 	plane->draw(shader);
+    
+    // drawing a finish line
+    glBindTexture(GL_TEXTURE_2D, finishTexture);
+    model = glm::mat4(1.0);
+    model = glm::translate(model, glm::vec3(4.0f, -0.4f, 9.0f));
+    model = glm::rotate(model, glm::radians(90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
+    model = glm::scale(model, glm::vec3(1.0f, 1.0f, 0.2f));
+    shader->setMat4("model", model);
+    cube->draw(shader);
 
     //drawing a sphere ( smile )
     model = glm::mat4(1.0f);
@@ -399,7 +407,8 @@ void render() {
     
     //drawing a sphere ( item )
     model = glm::mat4(1.0f);
-    model = glm::translate(model, glm::vec3(-8.0f, 0.0f, -8.0f));
+    model = glm::translate(model, glm::vec3(-8.0f, 0.2f, -8.0f));
+    model = glm::rotate(model,(float)(30.0f * M_PI / 90.0f) * (currentTime - lastTime), glm::vec3(0.0f, 1.0f, 0.0f));
     model = glm::scale(model, glm::vec3(0.25f, 0.25f, 0.25f));
     shader->setMat4("model", model);
     glBindTexture(GL_TEXTURE_2D, itemTexture);
@@ -407,7 +416,8 @@ void render() {
     glDrawArrays(GL_TRIANGLE_STRIP, 0, 3600);
     
     model = glm::mat4(1.0f);
-    model = glm::translate(model, glm::vec3(-6.0f, 0.0f, 1.0f));
+    model = glm::translate(model, glm::vec3(-6.0f, 0.2f, 1.0f));
+    model = glm::rotate(model,(float)(30.0f * M_PI / 90.0f) * (currentTime - lastTime), glm::vec3(0.0f, 1.0f, 0.0f));
     model = glm::scale(model, glm::vec3(0.25f, 0.25f, 0.25f));
     shader->setMat4("model", model);
     glBindTexture(GL_TEXTURE_2D, itemTexture);
@@ -415,7 +425,8 @@ void render() {
     glDrawArrays(GL_TRIANGLE_STRIP, 0, 3600);
     
     model = glm::mat4(1.0f);
-    model = glm::translate(model, glm::vec3(2.0f, 0.0f, -8.0f));
+    model = glm::translate(model, glm::vec3(2.0f, 0.2f, -8.0f));
+    model = glm::rotate(model,(float)(30.0f * M_PI / 90.0f) * (currentTime - lastTime), glm::vec3(0.0f, 1.0f, 0.0f));
     model = glm::scale(model, glm::vec3(0.25f, 0.25f, 0.25f));
     shader->setMat4("model", model);
     glBindTexture(GL_TEXTURE_2D, itemTexture);
@@ -423,7 +434,8 @@ void render() {
     glDrawArrays(GL_TRIANGLE_STRIP, 0, 3600);
     
     model = glm::mat4(1.0f);
-    model = glm::translate(model, glm::vec3(8.0f, 0.0f, -4.0f));
+    model = glm::translate(model, glm::vec3(8.0f, 0.2f, -4.0f));
+    model = glm::rotate(model,(float)(30.0f * M_PI / 90.0f) * (currentTime - lastTime), glm::vec3(0.0f, 1.0f, 0.0f));
     model = glm::scale(model, glm::vec3(0.25f, 0.25f, 0.25f));
     shader->setMat4("model", model);
     glBindTexture(GL_TEXTURE_2D, itemTexture);
@@ -431,7 +443,8 @@ void render() {
     glDrawArrays(GL_TRIANGLE_STRIP, 0, 3600);
     
     model = glm::mat4(1.0f);
-    model = glm::translate(model, glm::vec3(6.0f, 0.0f, 8.0f));
+    model = glm::translate(model, glm::vec3(6.0f, 0.2f, 8.0f));
+    model = glm::rotate(model,(float)(30.0f * M_PI / 90.0f) * (currentTime - lastTime), glm::vec3(0.0f, 1.0f, 0.0f));
     model = glm::scale(model, glm::vec3(0.25f, 0.25f, 0.25f));
     shader->setMat4("model", model);
     glBindTexture(GL_TEXTURE_2D, itemTexture);
@@ -439,7 +452,8 @@ void render() {
     glDrawArrays(GL_TRIANGLE_STRIP, 0, 3600);
     
     model = glm::mat4(1.0f);
-    model = glm::translate(model, glm::vec3(1.0f, 0.0f, 6.0f));
+    model = glm::translate(model, glm::vec3(1.0f, 0.2f, 6.0f));
+    model = glm::rotate(model,(float)(30.0f * M_PI / 90.0f) * (currentTime - lastTime), glm::vec3(0.0f, 1.0f, 0.0f));
     model = glm::scale(model, glm::vec3(0.25f, 0.25f, 0.25f));
     shader->setMat4("model", model);
     glBindTexture(GL_TEXTURE_2D, itemTexture);
@@ -447,7 +461,8 @@ void render() {
     glDrawArrays(GL_TRIANGLE_STRIP, 0, 3600);
     
     model = glm::mat4(1.0f);
-    model = glm::translate(model, glm::vec3(1.0f, 0.0f, 0.0f));
+    model = glm::translate(model, glm::vec3(1.0f, 0.2f, 0.0f));
+    model = glm::rotate(model,(float)(30.0f * M_PI / 90.0f) * (currentTime - lastTime), glm::vec3(0.0f, 1.0f, 0.0f));
     model = glm::scale(model, glm::vec3(0.25f, 0.25f, 0.25f));
     shader->setMat4("model", model);
     glBindTexture(GL_TEXTURE_2D, itemTexture);
