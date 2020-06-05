@@ -9,7 +9,6 @@
 #include <glm/gtc/type_ptr.hpp>
 #include <iostream>
 #include <cmath>
-
 #include <shader.h>
 #include <cube.h>
 #include <plane.h>
@@ -33,6 +32,7 @@ void cursor_position_callback(GLFWwindow *window, double x, double y);
 unsigned int loadTexture(const char *path);
 void scroll_callback(GLFWwindow *window, double xoffset, double yoffset);
 void render();
+bool wallcheck(float x, float z);
 
 // Global variables
 GLFWwindow *mainWindow = NULL;
@@ -60,9 +60,29 @@ float cc[ANGLE_NUM/2];
 unsigned int smileVBO[4];
 unsigned int smileVAO;
 
+glm::vec3 smilepos(-4.0f, 0.0f, -9.0f);
+float onestep = 0.5f;
+bool walltouch = false;
+
 //item vao, vbo
 unsigned int itemVBO[4];
 unsigned int itemVAO;
+float itemPos[7][2] = {
+    {-8.0f, -8.0f},
+    {-6.0f, 1.0f},
+    {2.0f, -8.0f},
+    {8.0f, -4.0f},
+    {6.0f, 8.0f},
+    {1.0f, 6.0f},
+    {1.0f, 0.0f}
+};
+
+// 벽이 있는 위치를 저장. 효율을 위해 전체를 4등분 해서 판별한다.
+float wallPos_NW[28][2];
+float wallPos_NE[33][2];
+float wallPos_SW[31][2];
+float wallPos_SE[36][2];
+
 
 unsigned int vSize = sizeof(vertices);
 unsigned int tSize = sizeof(textcood);
@@ -110,6 +130,175 @@ int main()
         cx[i] = cos(theta);
         cz[i] = sin(theta);
     }
+    
+    // 미로 벽 좌표 저장
+        //NW
+    for (i = 0; i < 7 ; i++ ) {
+        wallPos_NW[i][0] = -7.0f;
+        wallPos_NW[i][1] = -8.0f + i;
+    }
+    wallPos_NW[7][0] = -6.0f;
+    wallPos_NW[7][1] = -2.0f;
+    for (i = 0; i < 4; i++) {
+        wallPos_NW[8+i][0] = -5.0f;
+        wallPos_NW[8+i][1] = -7.0f+i;
+    }
+    wallPos_NW[12][0] = -5.0f;
+    wallPos_NW[12][1] = -2.0f;
+    wallPos_NW[13][0] = -4.0f;
+    wallPos_NW[13][1] = -4.0f;
+    for (i = 0; i < 3; i++) {
+        wallPos_NW[14+i][0] = -3.0f;
+        wallPos_NW[14+i][1] = -8.0f+i;
+    }
+    for (i = 0; i < 4; i++) {
+        wallPos_NW[17+i][0] = -3.0f;
+        wallPos_NW[17+i][1] = -4.0f+i;
+    }
+    wallPos_NW[21][0] = -2.0f;
+    wallPos_NW[21][1] = -1.0f;
+    for (i = 0; i < 5; i++) {
+        wallPos_NW[22+i][0] = -1.0f;
+        wallPos_NW[22+i][1] = -7.0f+i;
+    }
+    wallPos_NW[27][0] = -1.0f;
+    wallPos_NW[27][1] = -1.0f;
+    
+        //NE
+    for (i=0; i<3; i++) {
+        wallPos_NE[i][0] = 0.0f;
+        wallPos_NE[i][1] = -5.0f + (2.0f * i);
+    }
+    wallPos_NE[3][0] = 1.0f;
+    wallPos_NE[3][1] = -8.0f;
+    for (i=0; i<4; i++) {
+        wallPos_NE[4+i][0] = 1.0f;
+        wallPos_NE[4+i][1] = -7.0f + (2.0f * i);
+    }
+    for (i=0; i<4; i++) {
+        wallPos_NE[8+i][0] = 2.0f;
+        wallPos_NE[8+i][1] = -7.0f + (2.0f * i);
+    }
+    wallPos_NE[12][0] = 3.0f;
+    wallPos_NE[12][1] = -5.0f;
+    wallPos_NE[13][0] = 3.0f;
+    wallPos_NE[13][1] = -1.0f;
+    for (i=0; i<8; i++) {
+        wallPos_NE[14+i][0] = 4.0f;
+        wallPos_NE[14+i][1] = -8.0f+i;
+    }
+    wallPos_NE[22][0] = 5.0f;
+    wallPos_NE[22][1] = -1.0f;
+    for (i=0; i<5; i++) {
+        wallPos_NE[23+i][0] = 6.0f;
+        wallPos_NE[23+i][1] = -7.0f+i;
+    }
+    wallPos_NE[28][0] = 7.0f;
+    wallPos_NE[28][1] = -7.0f;
+    wallPos_NE[29][0] = 7.0f;
+    wallPos_NE[29][1] = -3.0f;
+    wallPos_NE[30][0] = 7.0f;
+    wallPos_NE[30][1] = -2.0f;
+    for (i=0; i<2; i++) {
+        wallPos_NE[31+i][0] = 8.0f;
+        wallPos_NE[31+i][1] = -5.0f+(2.0f * i);
+    }
+    
+        //SW-31
+    for (i=0; i<8; i++) {
+        wallPos_SW[i][0] = -7.0f;
+        wallPos_SW[i][1] = 0.0f + i;
+    }
+    wallPos_SW[8][0] = -6.0f;
+    wallPos_SW[8][1] = 0.0f;
+    wallPos_SW[9][0] = -6.0f;
+    wallPos_SW[9][1] = 3.0f;
+    wallPos_SW[10][0] = -6.0f;
+    wallPos_SW[10][1] = 7.0f;
+    wallPos_SW[11][0] = -5.0f;
+    wallPos_SW[11][1] = 0.0f;
+    for (i=0; i<4; i++) {
+        wallPos_SW[12+i][0] = -5.0f;
+        wallPos_SW[12+i][1] = 1.0f+(2.0f*i);
+    }
+    wallPos_SW[16][0] = -4.0f;
+    wallPos_SW[16][1] = 1.0f;
+    for (i=0; i<2; i++) {
+        wallPos_SW[17+i][0] = -4.0f;
+        wallPos_SW[17+i][1] = 5.0f+(2.0f*i);
+    }
+    for (i=0; i<3; i++) {
+        wallPos_SW[19+i][0] = -3.0f;
+        wallPos_SW[19+i][1] = 3.0f+i;
+    }
+    wallPos_SW[22][0] = -3.0f;
+    wallPos_SW[22][1] = 7.0f;
+    for (i=0; i<3; i++) {
+        wallPos_SW[23+i][0] = -2.0f;
+        wallPos_SW[23+i][1] = 1.0f+i;
+    }
+    wallPos_SW[26][0] = -2.0f;
+    wallPos_SW[26][1] = 7.0f;
+    wallPos_SW[27][0] = -1.0f;
+    wallPos_SW[27][1] = 3.0f;
+    for (i=0; i<3; i++) {
+        wallPos_SW[28+i][0] = -1.0f;
+        wallPos_SW[28+i][1] = 5.0f+i;
+    }
+    
+        //SE
+    wallPos_SE[0][0] = 0.0f;
+    wallPos_SE[0][1] = 0.0f;
+    for (i=0; i<3; i++) {
+        wallPos_SE[1+i][0] = 0.0f;
+        wallPos_SE[1+i][1] = 1.0f+(2.0f*i);
+    }
+    for (i=0; i<4; i++) {
+        wallPos_SE[4+i][0] = 1.0f;
+        wallPos_SE[4+i][1] = 1.0f+(2.0f*i);
+    }
+    wallPos_SE[8][0] = 1.0f;
+    wallPos_SE[8][1] = 8.0f;
+    for (i=0; i<2; i++) {
+        wallPos_SE[9+i][0] = 2.0f;
+        wallPos_SE[9+i][1] = 1.0f+(2.0f*i);
+    }
+    for (i=0; i<3; i++) {
+        wallPos_SE[11+i][0] = 2.0f;
+        wallPos_SE[11+i][1] = 5.0f+i;
+    }
+    for (i=0; i<2; i++) {
+        wallPos_SE[14+i][0] = 3.0f;
+        wallPos_SE[14+i][1] = 1.0f+(2.0f*i);
+    }
+    for (i=0; i<5; i++) {
+        wallPos_SE[16+i][0] = 4.0f;
+        wallPos_SE[16+i][1] = 3.0f+i;
+    }
+    for (i=0; i<2; i++) {
+        wallPos_SE[21+i][0] = 5.0f;
+        wallPos_SE[21+i][1] = 0.0f + i;
+    }
+    wallPos_SE[23][0] = 5.0f;
+    wallPos_SE[23][1] = 3.0f;
+    for (i=0; i<2; i++) {
+        wallPos_SE[24+i][0] = 5.0f;
+        wallPos_SE[24+i][1] = 7.0f+i;
+    }
+    for (i=0; i<3; i++) {
+        wallPos_SE[26+i][0] = 6.0f;
+        wallPos_SE[26+i][1] = 3.0f+(2.0f*i);
+    }
+    for (i=0; i<3; i++) {
+        wallPos_SE[29+i][0] = 7.0f;
+        wallPos_SE[29+i][1] = 0.0f + i;
+    }
+    for (i=0; i<3; i++) {
+        wallPos_SE[32+i][0] = 7.0f;
+        wallPos_SE[32+i][1] = 3.0f+(2.0f*i);
+    }
+    wallPos_SE[35][0] = 8.0f;
+    wallPos_SE[35][1] = 5.0f;
     
         //create buffers
     glGenVertexArrays(1, &smileVAO);
@@ -395,7 +584,7 @@ void render() {
 
     //drawing a sphere ( smile )
     model = glm::mat4(1.0f);
-    model = glm::translate(model, glm::vec3(-4.0f, 0.0f, -9.0f));
+    model = glm::translate(model, smilepos);
     model = glm::rotate(model, glm::radians(90.0f), glm::vec3(0.0f, 1.0f, 0.0f));
     model = glm::rotate(model, glm::radians(180.0f), glm::vec3(1.0f, 0.0f, 0.0f));
     model = glm::scale(model, glm::vec3(0.5f, 0.5f, 0.5f));
@@ -406,70 +595,19 @@ void render() {
     glDrawArrays(GL_TRIANGLE_STRIP, 0, 3600);
     
     //drawing a sphere ( item )
-    model = glm::mat4(1.0f);
-    model = glm::translate(model, glm::vec3(-8.0f, 0.2f, -8.0f));
-    model = glm::rotate(model,(float)(30.0f * M_PI / 90.0f) * (currentTime - lastTime), glm::vec3(0.0f, 1.0f, 0.0f));
-    model = glm::scale(model, glm::vec3(0.25f, 0.25f, 0.25f));
-    shader->setMat4("model", model);
-    glBindTexture(GL_TEXTURE_2D, itemTexture);
-    glBindVertexArray(itemVAO);
-    glDrawArrays(GL_TRIANGLE_STRIP, 0, 3600);
     
-    model = glm::mat4(1.0f);
-    model = glm::translate(model, glm::vec3(-6.0f, 0.2f, 1.0f));
-    model = glm::rotate(model,(float)(30.0f * M_PI / 90.0f) * (currentTime - lastTime), glm::vec3(0.0f, 1.0f, 0.0f));
-    model = glm::scale(model, glm::vec3(0.25f, 0.25f, 0.25f));
-    shader->setMat4("model", model);
-    glBindTexture(GL_TEXTURE_2D, itemTexture);
-    glBindVertexArray(itemVAO);
-    glDrawArrays(GL_TRIANGLE_STRIP, 0, 3600);
-    
-    model = glm::mat4(1.0f);
-    model = glm::translate(model, glm::vec3(2.0f, 0.2f, -8.0f));
-    model = glm::rotate(model,(float)(30.0f * M_PI / 90.0f) * (currentTime - lastTime), glm::vec3(0.0f, 1.0f, 0.0f));
-    model = glm::scale(model, glm::vec3(0.25f, 0.25f, 0.25f));
-    shader->setMat4("model", model);
-    glBindTexture(GL_TEXTURE_2D, itemTexture);
-    glBindVertexArray(itemVAO);
-    glDrawArrays(GL_TRIANGLE_STRIP, 0, 3600);
-    
-    model = glm::mat4(1.0f);
-    model = glm::translate(model, glm::vec3(8.0f, 0.2f, -4.0f));
-    model = glm::rotate(model,(float)(30.0f * M_PI / 90.0f) * (currentTime - lastTime), glm::vec3(0.0f, 1.0f, 0.0f));
-    model = glm::scale(model, glm::vec3(0.25f, 0.25f, 0.25f));
-    shader->setMat4("model", model);
-    glBindTexture(GL_TEXTURE_2D, itemTexture);
-    glBindVertexArray(itemVAO);
-    glDrawArrays(GL_TRIANGLE_STRIP, 0, 3600);
-    
-    model = glm::mat4(1.0f);
-    model = glm::translate(model, glm::vec3(6.0f, 0.2f, 8.0f));
-    model = glm::rotate(model,(float)(30.0f * M_PI / 90.0f) * (currentTime - lastTime), glm::vec3(0.0f, 1.0f, 0.0f));
-    model = glm::scale(model, glm::vec3(0.25f, 0.25f, 0.25f));
-    shader->setMat4("model", model);
-    glBindTexture(GL_TEXTURE_2D, itemTexture);
-    glBindVertexArray(itemVAO);
-    glDrawArrays(GL_TRIANGLE_STRIP, 0, 3600);
-    
-    model = glm::mat4(1.0f);
-    model = glm::translate(model, glm::vec3(1.0f, 0.2f, 6.0f));
-    model = glm::rotate(model,(float)(30.0f * M_PI / 90.0f) * (currentTime - lastTime), glm::vec3(0.0f, 1.0f, 0.0f));
-    model = glm::scale(model, glm::vec3(0.25f, 0.25f, 0.25f));
-    shader->setMat4("model", model);
-    glBindTexture(GL_TEXTURE_2D, itemTexture);
-    glBindVertexArray(itemVAO);
-    glDrawArrays(GL_TRIANGLE_STRIP, 0, 3600);
-    
-    model = glm::mat4(1.0f);
-    model = glm::translate(model, glm::vec3(1.0f, 0.2f, 0.0f));
-    model = glm::rotate(model,(float)(30.0f * M_PI / 90.0f) * (currentTime - lastTime), glm::vec3(0.0f, 1.0f, 0.0f));
-    model = glm::scale(model, glm::vec3(0.25f, 0.25f, 0.25f));
-    shader->setMat4("model", model);
-    glBindTexture(GL_TEXTURE_2D, itemTexture);
-    glBindVertexArray(itemVAO);
-    glDrawArrays(GL_TRIANGLE_STRIP, 0, 3600);
+    for (int i = 0; i < 7; i++) {
+        model = glm::mat4(1.0f);
+        model = glm::translate(model, glm::vec3(itemPos[i][0], 0.2f, itemPos[i][1]));
+        model = glm::rotate(model,(float)(30.0f * M_PI / 90.0f) * (currentTime - lastTime), glm::vec3(0.0f, 1.0f, 0.0f));
+        model = glm::scale(model, glm::vec3(0.25f, 0.25f, 0.25f));
+        shader->setMat4("model", model);
+        glBindTexture(GL_TEXTURE_2D, itemTexture);
+        glBindVertexArray(itemVAO);
+        glDrawArrays(GL_TRIANGLE_STRIP, 0, 3600);
+        
+    }
 
-    
     // drawing a textured cube
     glEnable(GL_STENCIL_TEST);
     glStencilFunc(GL_ALWAYS, 1, 0xFF);
@@ -517,274 +655,38 @@ void render() {
     }
     
     //drawing inner walls
-    for (i = 0; i < 7 ; i++ ) {
+    //NW
+    for (i = 0; i < 28 ; i++ ) {
         model = glm::mat4(1.0);
-        model = glm::translate(model, glm::vec3(-7.0f, 0.0f, -8.0f+i));
+        model = glm::translate(model, glm::vec3(wallPos_NW[i][0], 0.0f, wallPos_NW[i][1]));
         shader->setMat4("model", model);
         glDrawArrays(GL_TRIANGLES, 0, 36);
         cube->draw(shader);
     }
-    for (i = 0; i < 2; i++) {
+    //NE
+    for (i = 0; i < 33 ; i++ ) {
         model = glm::mat4(1.0);
-        model = glm::translate(model, glm::vec3(-6.0f+i, 0.0f, -2.0f));
+        model = glm::translate(model, glm::vec3(wallPos_NE[i][0], 0.0f, wallPos_NE[i][1]));
         shader->setMat4("model", model);
         glDrawArrays(GL_TRIANGLES, 0, 36);
         cube->draw(shader);
     }
-    for (i = 0; i < 3; i++) {
+    //SW
+    for (i = 0; i < 31 ; i++ ) {
         model = glm::mat4(1.0);
-        model = glm::translate(model, glm::vec3(-5.0f, 0.0f, -7.0f+i));
+        model = glm::translate(model, glm::vec3(wallPos_SW[i][0], 0.0f, wallPos_SW[i][1]));
         shader->setMat4("model", model);
         glDrawArrays(GL_TRIANGLES, 0, 36);
         cube->draw(shader);
     }
-    for (i = 0; i < 3; i++) {
-           model = glm::mat4(1.0);
-        model = glm::translate(model, glm::vec3(-5.0f+i, 0.0f, -4.0f));
-           shader->setMat4("model", model);
-           glDrawArrays(GL_TRIANGLES, 0, 36);
-           cube->draw(shader);
-       }
-    for (i = 0; i < 3; i++) {
-           model = glm::mat4(1.0);
-           model = glm::translate(model, glm::vec3(-3.0f, 0.0f, -3.0f+i));
-           shader->setMat4("model", model);
-           glDrawArrays(GL_TRIANGLES, 0, 36);
-           cube->draw(shader);
-       }
-    for (i = 0; i < 7; i++) {
-           model = glm::mat4(1.0);
-        model = glm::translate(model, glm::vec3(-2.0f+i, 0.0f, -1.0f));
-           shader->setMat4("model", model);
-           glDrawArrays(GL_TRIANGLES, 0, 36);
-           cube->draw(shader);
-       }
-    for (i = 0; i < 7; i++) {
-           model = glm::mat4(1.0);
-           model = glm::translate(model, glm::vec3(4.0f, 0.0f, -8.0f+i));
-           shader->setMat4("model", model);
-           glDrawArrays(GL_TRIANGLES, 0, 36);
-           cube->draw(shader);
-       }
-    for (i = 0; i < 3; i++) {
-           model = glm::mat4(1.0);
-           model = glm::translate(model, glm::vec3(5.0f, 0.0f, -1.0f+i));
-           shader->setMat4("model", model);
-           glDrawArrays(GL_TRIANGLES, 0, 36);
-           cube->draw(shader);
-       }
-    for (i = 0; i < 3; i++) {
-           model = glm::mat4(1.0);
-           model = glm::translate(model, glm::vec3(-3.0f, 0.0f, -8.0f+i));
-           shader->setMat4("model", model);
-           glDrawArrays(GL_TRIANGLES, 0, 36);
-           cube->draw(shader);
-       }
-    for (i = 0; i < 5; i++) {
-           model = glm::mat4(1.0);
-           model = glm::translate(model, glm::vec3(-1.0f, 0.0f, -7.0f+i));
-           shader->setMat4("model", model);
-           glDrawArrays(GL_TRIANGLES, 0, 36);
-           cube->draw(shader);
-       }
-    for (i = 0; i < 3; i++) {
-           model = glm::mat4(1.0);
-           model = glm::translate(model, glm::vec3(0.0f+i, 0.0f, -3.0f));
-           shader->setMat4("model", model);
-           glDrawArrays(GL_TRIANGLES, 0, 36);
-           cube->draw(shader);
-       }
-    for (i = 0; i < 4; i++) {
-           model = glm::mat4(1.0);
-           model = glm::translate(model, glm::vec3(0.0f+i, 0.0f, -5.0f));
-           shader->setMat4("model", model);
-           glDrawArrays(GL_TRIANGLES, 0, 36);
-           cube->draw(shader);
-       }
-    for (i = 0; i < 2; i++) {
-           model = glm::mat4(1.0);
-           model = glm::translate(model, glm::vec3(1.0f, 0.0f, -8.0f+i));
-           shader->setMat4("model", model);
-           glDrawArrays(GL_TRIANGLES, 0, 36);
-           cube->draw(shader);
-       }
-    for (i = 0; i < 2; i++) {
+    //SE
+    for (i = 0; i < 36 ; i++ ) {
         model = glm::mat4(1.0);
-        model = glm::translate(model, glm::vec3(6.0f+i, 0.0f, -7.0f));
+        model = glm::translate(model, glm::vec3(wallPos_SE[i][0], 0.0f, wallPos_SE[i][1]));
         shader->setMat4("model", model);
         glDrawArrays(GL_TRIANGLES, 0, 36);
         cube->draw(shader);
     }
-    for (i = 0; i < 4; i++) {
-        model = glm::mat4(1.0);
-        model = glm::translate(model, glm::vec3(6.0f, 0.0f, -6.0f+i));
-        shader->setMat4("model", model);
-        glDrawArrays(GL_TRIANGLES, 0, 36);
-        cube->draw(shader);
-    }
-    for (i = 0; i < 2; i++) {
-        model = glm::mat4(1.0);
-        model = glm::translate(model, glm::vec3(7.0f, 0.0f, -3.0f+i));
-        shader->setMat4("model", model);
-        glDrawArrays(GL_TRIANGLES, 0, 36);
-        cube->draw(shader);
-    }
-    for (i = 0; i < 2; i++) {
-        model = glm::mat4(1.0);
-        model = glm::translate(model, glm::vec3(0.0f, 0.0f, 0.0f+i));
-        shader->setMat4("model", model);
-        glDrawArrays(GL_TRIANGLES, 0, 36);
-        cube->draw(shader);
-    }
-    for (i = 0; i < 3; i++) {
-        model = glm::mat4(1.0);
-        model = glm::translate(model, glm::vec3(1.0f+i, 0.0f, 1.0f));
-        shader->setMat4("model", model);
-        glDrawArrays(GL_TRIANGLES, 0, 36);
-        cube->draw(shader);
-    }
-    for (i = 0; i < 2; i++) {
-        model = glm::mat4(1.0);
-        model = glm::translate(model, glm::vec3(-5.0f+i, 0.0f, 1.0f));
-        shader->setMat4("model", model);
-        glDrawArrays(GL_TRIANGLES, 0, 36);
-        cube->draw(shader);
-    }
-    for (i = 0; i < 3; i++) {
-        model = glm::mat4(1.0);
-        model = glm::translate(model, glm::vec3(-7.0f+i, 0.0f, 0.0f));
-        shader->setMat4("model", model);
-        glDrawArrays(GL_TRIANGLES, 0, 36);
-        cube->draw(shader);
-    }
-    for (i = 0; i < 7; i++) {
-        model = glm::mat4(1.0);
-        model = glm::translate(model, glm::vec3(-7.0f, 0.0f, 1.0f+i));
-        shader->setMat4("model", model);
-        glDrawArrays(GL_TRIANGLES, 0, 36);
-        cube->draw(shader);
-    }
-    for (i = 0; i < 2; i++) {
-        model = glm::mat4(1.0);
-        model = glm::translate(model, glm::vec3(-6.0f+i, 0.0f, 3.0f));
-        shader->setMat4("model", model);
-        glDrawArrays(GL_TRIANGLES, 0, 36);
-        cube->draw(shader);
-    }
-    for (i = 0; i < 5; i++) {
-        model = glm::mat4(1.0);
-        model = glm::translate(model, glm::vec3(-6.0f+i, 0.0f, 7.0f));
-        shader->setMat4("model", model);
-        glDrawArrays(GL_TRIANGLES, 0, 36);
-        cube->draw(shader);
-    }
-    for (i = 0; i < 3; i++) {
-        model = glm::mat4(1.0);
-        model = glm::translate(model, glm::vec3(-1.0f, 0.0f, 5.0f+i));
-        shader->setMat4("model", model);
-        glDrawArrays(GL_TRIANGLES, 0, 36);
-        cube->draw(shader);
-    }
-    for (i = 0; i < 3; i++) {
-        model = glm::mat4(1.0);
-        model = glm::translate(model, glm::vec3(0.0f+i, 0.0f, 5.0f));
-        shader->setMat4("model", model);
-        glDrawArrays(GL_TRIANGLES, 0, 36);
-        cube->draw(shader);
-    }
-    for (i = 0; i < 2; i++) {
-        model = glm::mat4(1.0);
-        model = glm::translate(model, glm::vec3(2.0f, 0.0f, 6.0f+i));
-        shader->setMat4("model", model);
-        glDrawArrays(GL_TRIANGLES, 0, 36);
-        cube->draw(shader);
-    }
-    for (i = 0; i < 2; i++) {
-        model = glm::mat4(1.0);
-        model = glm::translate(model, glm::vec3(1.0f, 0.0f, 7.0f+i));
-        shader->setMat4("model", model);
-        glDrawArrays(GL_TRIANGLES, 0, 36);
-        cube->draw(shader);
-    }
-    for (i = 0; i < 2; i++) {
-        model = glm::mat4(1.0);
-        model = glm::translate(model, glm::vec3(-5.0f+i, 0.0f, 5.0f));
-        shader->setMat4("model", model);
-        glDrawArrays(GL_TRIANGLES, 0, 36);
-        cube->draw(shader);
-    }
-    for (i = 0; i < 3; i++) {
-        model = glm::mat4(1.0);
-        model = glm::translate(model, glm::vec3(-3.0f, 0.0f, 3.0f+i));
-        shader->setMat4("model", model);
-        glDrawArrays(GL_TRIANGLES, 0, 36);
-        cube->draw(shader);
-    }
-    for (i = 0; i < 3; i++) {
-        model = glm::mat4(1.0);
-        model = glm::translate(model, glm::vec3(-2.0f, 0.0f, 1.0f+i));
-        shader->setMat4("model", model);
-        glDrawArrays(GL_TRIANGLES, 0, 36);
-        cube->draw(shader);
-    }
-    for (i = 0; i < 9; i++) {
-        model = glm::mat4(1.0);
-        model = glm::translate(model, glm::vec3(-1.0f+i, 0.0f, 3.0f));
-        shader->setMat4("model", model);
-        glDrawArrays(GL_TRIANGLES, 0, 36);
-        cube->draw(shader);
-    }
-    for (i = 0; i < 3; i++) {
-        model = glm::mat4(1.0);
-        model = glm::translate(model, glm::vec3(7.0f, 0.0f, 0.0f+i));
-        shader->setMat4("model", model);
-        glDrawArrays(GL_TRIANGLES, 0, 36);
-        cube->draw(shader);
-    }
-    for (i = 0; i < 4; i++) {
-        model = glm::mat4(1.0);
-        model = glm::translate(model, glm::vec3(4.0f, 0.0f, 4.0f+i));
-        shader->setMat4("model", model);
-        glDrawArrays(GL_TRIANGLES, 0, 36);
-        cube->draw(shader);
-    }
-    for (i = 0; i < 3; i++) {
-        model = glm::mat4(1.0);
-        model = glm::translate(model, glm::vec3(5.0f+i, 0.0f, 7.0f));
-        shader->setMat4("model", model);
-        glDrawArrays(GL_TRIANGLES, 0, 36);
-        cube->draw(shader);
-    }
-    for (i = 0; i < 3; i++) {
-        model = glm::mat4(1.0);
-        model = glm::translate(model, glm::vec3(6.0f+i, 0.0f, 5.0f));
-        shader->setMat4("model", model);
-        glDrawArrays(GL_TRIANGLES, 0, 36);
-        cube->draw(shader);
-    }
-    model = glm::mat4(1.0);
-    model = glm::translate(model, glm::vec3(2.0f, 0.0f, -7.0f));
-    shader->setMat4("model", model);
-    glDrawArrays(GL_TRIANGLES, 0, 36);
-    cube->draw(shader);
-    
-    model = glm::mat4(1.0);
-    model = glm::translate(model, glm::vec3(5.0f, 0.0f, 8.0f));
-    shader->setMat4("model", model);
-    glDrawArrays(GL_TRIANGLES, 0, 36);
-    cube->draw(shader);
-    
-    model = glm::mat4(1.0);
-    model = glm::translate(model, glm::vec3(8.0f, 0.0f, -5.0f));
-    shader->setMat4("model", model);
-    glDrawArrays(GL_TRIANGLES, 0, 36);
-    cube->draw(shader);
-    
-    model = glm::mat4(1.0);
-    model = glm::translate(model, glm::vec3(8.0f, 0.0f, -3.0f));
-    shader->setMat4("model", model);
-    glDrawArrays(GL_TRIANGLES, 0, 36);
-    cube->draw(shader);
     glfwSwapBuffers(mainWindow);
 }
 
@@ -894,7 +796,26 @@ void key_callback(GLFWwindow *window, int key, int scancode, int action, int mod
 	else if (key == GLFW_KEY_R && action == GLFW_PRESS) {
 		camArcBall.init(SCR_WIDTH, SCR_HEIGHT, arcballSpeed, true, true);
 		cameraPos = cameraOrigPos;
+        for (int i = 0; i < 3; i++) {
+            smilepos[i] = 0.0f;
+        }
 	}
+    else if (key == GLFW_KEY_LEFT) {
+        walltouch = wallcheck(smilepos[0] - 1.0f, round(smilepos[2]));
+        if (!walltouch) smilepos[0] -= onestep;
+    }
+    else if (key == GLFW_KEY_RIGHT) {
+        walltouch = wallcheck(smilepos[0] + 1.0f, round(smilepos[2]));
+        if (!walltouch) smilepos[0] += onestep;
+    }
+    else if (key == GLFW_KEY_DOWN ) {
+        walltouch = wallcheck(round(smilepos[0]), smilepos[2] + 1.0f);
+        if (!walltouch) smilepos[2] += onestep;
+    }
+    else if (key == GLFW_KEY_UP) {
+        walltouch = wallcheck(round(smilepos[0]), smilepos[2] - 1.0f);
+        if (!walltouch) smilepos[2] -= onestep;
+    }
 }
 
 void mouse_button_callback(GLFWwindow *window, int button, int action, int mods) {
@@ -907,4 +828,55 @@ void cursor_position_callback(GLFWwindow *window, double x, double y) {
 
 void scroll_callback(GLFWwindow *window, double xoffset, double yoffset) {
 	cameraPos[2] -= (yoffset * 0.5);
+}
+
+bool wallcheck(float x, float z) {
+    int i;
+    //edge wall check
+    if (x==-9.0f || x==9.0f) return true;
+    if (z == 9.0f) {
+        if (x != 4.0f) return true;
+    }
+    if (z == -9.0f) {
+        if (x != -4.0f) return true;
+    }
+    //NW
+    if (x<0 && z < 0) {
+        i = 0;
+        while (wallPos_NW[i][0] <= x) {
+            if (wallPos_NW[i][0] == x && wallPos_NW[i][1] == z) return true;
+            i ++;
+        }
+        return false;
+    }
+    //NE
+    else if (x >= 0 && z < 0) {
+        i = 0;
+        while (wallPos_NE[i][0] <= x) {
+            if (wallPos_NE[i][0] == x && wallPos_NE[i][1] == z) return true;
+            i ++;
+        }
+        return false;
+    }
+    //SW
+    else if (x<0 && z>=0) {
+        i = 0;
+        while (wallPos_SW[i][0] <= x) {
+            if (wallPos_SW[i][0] == x && wallPos_SW[i][1] == z) return true;
+            i ++;
+        }
+        return false;
+        
+    }
+    //SE
+    else if (x>=0 && z>=0) {
+        i = 0;
+        while (wallPos_SE[i][0] <= x) {
+            if (wallPos_SE[i][0] == x && wallPos_SE[i][1] == z) return true;
+            i ++;
+        }
+        return false;
+        
+    }
+    return false;
 }
