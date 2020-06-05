@@ -33,11 +33,14 @@ unsigned int loadTexture(const char *path);
 void scroll_callback(GLFWwindow *window, double xoffset, double yoffset);
 void render();
 bool wallcheck(float x, float z);
+bool itemcheck(float x, float z);
+void lighton();
 
 // Global variables
 GLFWwindow *mainWindow = NULL;
 Shader *shader = NULL;
 Shader *shaderSingleColor = NULL;
+Shader *lightShader = NULL;
 unsigned int SCR_WIDTH = 600;
 unsigned int SCR_HEIGHT = 600;
 Cube *cube;
@@ -114,7 +117,8 @@ int main()
 	// shader loading and compile (by calling the constructor)
 	shader = new Shader("2.stencil_testing.vs", "2.stencil_testing.fs");
 	shaderSingleColor = new Shader("2.stencil_testing.vs", "2.stencil_single_color.fs");
-
+    lightShader = new Shader("objectlight.fs", "objectlight.vs");
+    
     int i;
     
     //90도까지만 저장을 해 둬도 된다. 어차피 남반구 = -북반구
@@ -558,6 +562,8 @@ void render() {
 	// send view to shader
 	view = glm::lookAt(cameraPos, camTarget, camUp);
 	view = view * camArcBall.createRotationMatrix();
+//    lightShader->use();
+//    lightShader->setVec3("Pointlight.position",smilepos);
 	shader->use();
 	shader->setMat4("view", view);
 	shaderSingleColor->use();
@@ -796,25 +802,29 @@ void key_callback(GLFWwindow *window, int key, int scancode, int action, int mod
 	else if (key == GLFW_KEY_R && action == GLFW_PRESS) {
 		camArcBall.init(SCR_WIDTH, SCR_HEIGHT, arcballSpeed, true, true);
 		cameraPos = cameraOrigPos;
-        for (int i = 0; i < 3; i++) {
-            smilepos[i] = 0.0f;
-        }
+        smilepos[0] = -4.0f;
+        smilepos[1] = 0.0f;
+        smilepos[2] = -9.0f;
 	}
     else if (key == GLFW_KEY_LEFT) {
         walltouch = wallcheck(smilepos[0] - 1.0f, round(smilepos[2]));
         if (!walltouch) smilepos[0] -= onestep;
+        if (itemcheck(smilepos[0], smilepos[2])) lighton();
     }
     else if (key == GLFW_KEY_RIGHT) {
         walltouch = wallcheck(smilepos[0] + 1.0f, round(smilepos[2]));
         if (!walltouch) smilepos[0] += onestep;
+        if (itemcheck(smilepos[0], smilepos[2])) lighton();
     }
     else if (key == GLFW_KEY_DOWN ) {
         walltouch = wallcheck(round(smilepos[0]), smilepos[2] + 1.0f);
         if (!walltouch) smilepos[2] += onestep;
+        if (itemcheck(smilepos[0], smilepos[2])) lighton();
     }
     else if (key == GLFW_KEY_UP) {
         walltouch = wallcheck(round(smilepos[0]), smilepos[2] - 1.0f);
         if (!walltouch) smilepos[2] -= onestep;
+        if (itemcheck(smilepos[0], smilepos[2])) lighton();
     }
 }
 
@@ -830,6 +840,7 @@ void scroll_callback(GLFWwindow *window, double xoffset, double yoffset) {
 	cameraPos[2] -= (yoffset * 0.5);
 }
 
+//벽을 만나면 true를 return. 벽으로 못 가게.
 bool wallcheck(float x, float z) {
     int i;
     //edge wall check
@@ -879,4 +890,19 @@ bool wallcheck(float x, float z) {
         
     }
     return false;
+}
+
+//item을 만나면 true를 ㄱeturn.
+bool itemcheck(float x, float z) {
+    for (int i = 0; i < 7; i++) {
+        if (itemPos[i][0] == x && itemPos[i][1] == z) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// 3초간 불 켠다
+void lighton() {
+    cout << "아이템에 닿았음" << endl;
 }
