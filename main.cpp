@@ -1,6 +1,7 @@
-
+// 32_InfinitePointLights
 //      Mouse: Arcball manipulation
 //      Keyboard: 'r' - reset arcball
+//                'a' - toggle camera/object rotation
 
 #include <GL/glew.h> 
 #include <GLFW/glfw3.h>
@@ -9,43 +10,55 @@
 #include <glm/gtc/type_ptr.hpp>
 #include <iostream>
 #include <cmath>
+#include <math.h>
 #include <shader.h>
-#include <cube.h>
 #include <plane.h>
 #include <arcball.h>
-
+#include <cube.h>
+#include <text.h>
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
+#include <unistd.h>
+#include <time.h>
 
-using namespace std;
+ 
+
+using namespace std; 
 
 // the number of partitions
 const int ANGLE_NUM = 40;
 
-
 // Function Prototypes
 GLFWwindow *glAllInit();
 void framebuffer_size_callback(GLFWwindow* window, int width, int height);
-void key_callback(GLFWwindow *window, int key, int scancode, int action, int mods);
+void key_callback(GLFWwindow *window, int key, int scancode, int action , int mods);
 void mouse_button_callback(GLFWwindow *window, int button, int action, int mods);
 void cursor_position_callback(GLFWwindow *window, double x, double y);
-unsigned int loadTexture(const char *path);
-void scroll_callback(GLFWwindow *window, double xoffset, double yoffset);
+unsigned int loadTexture(const char *);
 void render();
 bool wallcheck(float x, float z);
 bool itemcheck(float x, float z);
 void lighton();
+void waitandlightoff();
+void finish();
+
+
+
+float startTime, playTime, nowTime, targetTime, currentTime;
 
 // Global variables
 GLFWwindow *mainWindow = NULL;
-Shader *shader = NULL;
-Shader *shaderSingleColor = NULL;
-Shader *lightShader = NULL;
+Shader *lightingShader = NULL;
+Shader *textShader = NULL;
+
 unsigned int SCR_WIDTH = 600;
 unsigned int SCR_HEIGHT = 600;
-Cube *cube;
+
 Plane *plane;
+Text *text;
+Cube *cube;
 glm::mat4 projection, view, model;
+
 
 // for sphere
 float theta =  2 * M_PI / ANGLE_NUM;
@@ -58,16 +71,21 @@ float cx[ANGLE_NUM];
 float cy[ANGLE_NUM /2];
 float cz[ANGLE_NUM];
 float cc[ANGLE_NUM/2];
-
+ 
 // character vao, vbo
 unsigned int smileVBO[4];
 unsigned int smileVAO;
 
 glm::vec3 smilepos(-4.0f, 0.0f, -9.0f);
+glm::vec3 ambient(0.0f, 0.0f, 0.0f);
+glm::vec3 diffuse(0.0f, 0.0f, 0.0f);
+glm::vec3 finishPos(4.0f, -0.4f, 9.0f);
+
 float onestep = 0.5f;
 bool walltouch = false;
+bool gamefinish = false;
 
-//item vao, vbo
+//for items
 unsigned int itemVBO[4];
 unsigned int itemVAO;
 float itemPos[7][2] = {
@@ -80,44 +98,50 @@ float itemPos[7][2] = {
     {1.0f, 0.0f}
 };
 
+// for arcball
+float arcballSpeed = 0.05f;
+static Arcball camArcBall(SCR_WIDTH, SCR_HEIGHT, arcballSpeed, true, true );
+
+
+
+// for camera
+glm::vec3 cameraPos(0.0f, 23.0f, 18.0f);
+
+
+// for lighting
+glm::vec3 lightPos(1.2f, 1.0f, 2.0f);
+
+// positions of the point lights
+glm::vec3 pointcol(1.0f, 1.0f, 1.0f);
+glm::vec3 pointLightPosition = glm::vec3(-4.0f,  0.0f,  -9.0f);
+
+
 // 벽이 있는 위치를 저장. 효율을 위해 전체를 4등분 해서 판별한다.
 float wallPos_NW[28][2];
 float wallPos_NE[33][2];
 float wallPos_SW[31][2];
 float wallPos_SE[36][2];
 
-
 unsigned int vSize = sizeof(vertices);
 unsigned int tSize = sizeof(textcood);
 unsigned int nSize = sizeof(normals);
-unsigned int cSize = sizeof(colors);;
+unsigned int cSize = sizeof(colors);
 
 float lastTime = 0.0f;
-// for camera
-glm::vec3 cameraOrigPos(0.0f, 23.0f, 18.0f);
-glm::vec3 cameraPos;
-glm::vec3 camTarget(0.0f, 0.0f, 0.0f);
-glm::vec3 camUp(0.0f, 1.0f, 0.0f);
-
-// for arcball
-float arcballSpeed = 0.1f;
-static Arcball camArcBall(SCR_WIDTH, SCR_HEIGHT, arcballSpeed, true, true);
 
 // for texture
-unsigned int cubeTexture, floorTexture, characTexture, itemTexture, finishTexture;
-
-// for outline
-float outlineScale = 1.1f;
-
+static unsigned int itemTexture,floorMap, cubeTexture, characTexture, finishTexture, victoryTexture;  // texture ids for diffuse and specular maps
 
 int main()
 {
-	mainWindow = glAllInit();
-
-	// shader loading and compile (by calling the constructor)
-	shader = new Shader("2.stencil_testing.vs", "2.stencil_testing.fs");
-	shaderSingleColor = new Shader("2.stencil_testing.vs", "2.stencil_single_color.fs");
-    lightShader = new Shader("objectlight.fs", "objectlight.vs");
+    mainWindow = glAllInit();
+    
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    // shader loading and compile (by calling the constructor)
+    lightingShader = new Shader("objectlight.vs", "objectlight.fs");
+    textShader = new Shader("text.vs", "text.frag");
+    text = new Text("fonts/arial.ttf", textShader, SCR_WIDTH, SCR_HEIGHT);
     
     int i;
     
@@ -134,7 +158,6 @@ int main()
         cx[i] = cos(theta);
         cz[i] = sin(theta);
     }
-    
     // 미로 벽 좌표 저장
         //NW
     for (i = 0; i < 7 ; i++ ) {
@@ -303,17 +326,18 @@ int main()
     }
     wallPos_SE[35][0] = 8.0f;
     wallPos_SE[35][1] = 5.0f;
-    
-        //create buffers
+
+    //create buffers
     glGenVertexArrays(1, &smileVAO);
     glGenBuffers(4, smileVBO);
     
     glGenVertexArrays(1, &itemVAO);
     glGenBuffers(4, itemVBO);
     
+    
      //smile character
     glBindVertexArray(smileVAO);
-    
+
     // reserve space for position attributes
     glBindBuffer(GL_ARRAY_BUFFER, smileVBO[0]);
     glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), 0, GL_STATIC_DRAW);
@@ -328,16 +352,16 @@ int main()
     glBindBuffer(GL_ARRAY_BUFFER, smileVBO[2]);
     glBufferData(GL_ARRAY_BUFFER, sizeof(colors), 0, GL_STATIC_DRAW);
     glBindBuffer(GL_ARRAY_BUFFER, 0);
-    
+
     // reserve space for texture
     glBindBuffer(GL_ARRAY_BUFFER, smileVBO[3]);
     glBufferData(GL_ARRAY_BUFFER, sizeof(textcood), 0, GL_STATIC_DRAW);
     glBindBuffer(GL_ARRAY_BUFFER, 0);
-    
+        
     
     // item
     glBindVertexArray(itemVAO);
-    
+
     // reserve space for position attributes
     glBindBuffer(GL_ARRAY_BUFFER, itemVBO[0]);
     glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), 0, GL_STATIC_DRAW);
@@ -352,7 +376,7 @@ int main()
     glBindBuffer(GL_ARRAY_BUFFER, itemVBO[2]);
     glBufferData(GL_ARRAY_BUFFER, sizeof(colors), 0, GL_STATIC_DRAW);
     glBindBuffer(GL_ARRAY_BUFFER, 0);
-    
+
     // reserve space for texture
     glBindBuffer(GL_ARRAY_BUFFER, itemVBO[3]);
     glBufferData(GL_ARRAY_BUFFER, sizeof(textcood), 0, GL_STATIC_DRAW);
@@ -477,7 +501,7 @@ int main()
     glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), 0);
     glEnableVertexAttribArray(2);
     glBindBuffer(GL_ARRAY_BUFFER, 0);
-    
+
     glBindBuffer(GL_ARRAY_BUFFER, smileVBO[3]);
     glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(textcood), textcood);
     glVertexAttribPointer(3, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), 0);
@@ -485,7 +509,7 @@ int main()
     glBindBuffer(GL_ARRAY_BUFFER, 0);
 
     glBindVertexArray(0);
-    
+
     //item
     glBindVertexArray(itemVAO);
            
@@ -506,7 +530,7 @@ int main()
     glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), 0);
     glEnableVertexAttribArray(2);
     glBindBuffer(GL_ARRAY_BUFFER, 0);
-    
+
     glBindBuffer(GL_ARRAY_BUFFER, itemVBO[3]);
     glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(textcood), textcood);
     glVertexAttribPointer(3, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), 0);
@@ -515,149 +539,239 @@ int main()
 
     glBindVertexArray(0);
     
+    // projection and view matrix
+    projection = glm::perspective(glm::radians(45.0f),
+                                  (float)SCR_WIDTH / (float)SCR_HEIGHT, 0.1f, 100.0f);
+    lightingShader->use();
+    lightingShader->setMat4("projection", projection);
     
-	// projection matrix
-	projection = glm::perspective(glm::radians(45.0f),
-		(float)SCR_WIDTH / (float)SCR_HEIGHT, 0.1f, 100.0f);
-	shader->use();
-	shader->setMat4("projection", projection);
-	shaderSingleColor->use();
-	shaderSingleColor->setMat4("projection", projection);
-
-	// set defaul camera position
-	cameraPos = cameraOrigPos;
-
-	// load textures
-	// -------------
-	cubeTexture = loadTexture("stonewall2.png");
-	floorTexture = loadTexture("metal.png");
+    
+    // load texture
+    floorMap = loadTexture("metal.png");
+    cubeTexture = loadTexture("stonewall2.png");
     characTexture = loadTexture("smile.png");
-    itemTexture = loadTexture("shiny.png");
     finishTexture = loadTexture("finish.png");
-
-	shader->use();
-	shader->setInt("texture1", 0);
+    itemTexture = loadTexture("shiny.png");
+    victoryTexture = loadTexture("victory.png");
     
-	// create a cube and a plane
-	cube = new Cube();
-	plane = new Plane();
+    // transfer texture id to fragment shader
+    lightingShader->use();
+    lightingShader->setInt("material.diffuse", 0);
+    lightingShader->setInt("material.specular", 1);
+    lightingShader->setFloat("material.shininess", 32);
+    
+    lightingShader->setVec3("viewPos", cameraPos);
+    lightingShader->setVec3("pointCola", pointcol);
 
-	while (!glfwWindowShouldClose(mainWindow)) {
-		render();
-		glfwPollEvents();
-	}
+    // point light
+//    lightingShader->setVec3("pointLight.position", smilepos);
+//    lightingShader->setVec3("pointLight.ambient", 1.0f, 1.0f, 1.0f);
+//    lightingShader->setVec3("pointLight.diffuse", 1.0f, 0.9f, 0.7f);
+//    lightingShader->setVec3("pointLight.specular", 1.0f, 1.0f, 1.0f);
+//    lightingShader->setFloat("pointLight.constant", 0.2f); // 작을 수록 밝아짐
+//    lightingShader->setFloat("pointLight.linear", 8.0f); // 클수록 좁아짐
+//    lightingShader->setFloat("pointLight.quadratic", 0.1);
+    lightingShader->setVec3("finishLight.position", finishPos);
+    lightingShader->setVec3("finishLight.ambient", 1.0f, 1.0f, 1.0f);
+    lightingShader->setVec3("finishLight.diffuse", 1.0f, 0.9f, 0.7f);
+    lightingShader->setFloat("finishLight.constant", 3.0f); // 작을 수록 밝아짐
+    lightingShader->setFloat("finishLight.linear", 10.0f); // 클수록 좁아짐
+    lightingShader->setFloat("finishLight.quadratic", 1.0f);
 
-	glfwTerminate();
-	return 0;
+    plane = new Plane();
+    cube = new Cube();
+
+    while (!glfwWindowShouldClose(mainWindow)) {
+        glfwPollEvents();
+        render();
+        glfwSwapBuffers(mainWindow);
+    }
+    
+    glfwTerminate();
+    return 0;
 }
 
-// render
-void render() {
-    int i;
-	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
-    glEnable(GL_DEPTH_TEST);
-    glDisable(GL_STENCIL_TEST);
-
-    float currentTime = glfwGetTime();
-	// send view to shader
-	view = glm::lookAt(cameraPos, camTarget, camUp);
-	view = view * camArcBall.createRotationMatrix();
-//    lightShader->use();
-//    lightShader->setVec3("Pointlight.position",smilepos);
-	shader->use();
-	shader->setMat4("view", view);
-	shaderSingleColor->use();
-	shaderSingleColor->setMat4("view", view);
-	shader->use();
-
-	// drawing a floor
-	glBindTexture(GL_TEXTURE_2D, floorTexture);
-	model = glm::mat4(1.0);
-    model = glm::translate(model, glm::vec3(0.0f, -0.5f, 0.0f));
-	model = glm::rotate(model, glm::radians(90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
-	model = glm::scale(model, glm::vec3(19.0f, 19.0f, 0.0f));
-	shader->setMat4("model", model);
-	plane->draw(shader);
+GLFWwindow *glAllInit()
+{
+    GLFWwindow *window;
     
-    // drawing a finish line
+    // glfw: initialize and configure
+    if (!glfwInit()) {
+        printf("GLFW initialisation failed!");
+        glfwTerminate();
+        exit(-1);
+    }
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
+    glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+    glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
+    
+    // glfw window creation
+    window = glfwCreateWindow(SCR_WIDTH, SCR_HEIGHT, "The Maze Runner", NULL, NULL);
+    if (window == NULL) {
+        cout << "Failed to create GLFW window" << std::endl;
+        glfwTerminate();
+        exit(-1);
+    }
+    glfwMakeContextCurrent(window);
+    glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
+    glfwSetKeyCallback(window, key_callback);
+    glfwSetMouseButtonCallback(window, mouse_button_callback);
+    glfwSetCursorPosCallback(window, cursor_position_callback);
+    
+    // OpenGL states
+    glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
+    glEnable(GL_DEPTH_TEST);
+    
+    // Allow modern extension features
+    glewExperimental = GL_TRUE;
+    if (glewInit() != GLEW_OK) {
+        cout << "GLEW initialisation failed!" << endl;
+        glfwDestroyWindow(window);
+        glfwTerminate();
+        exit(-1);
+    }
+    
+    return window;
+}
+
+unsigned int loadTexture(const char *texFileName) {
+    unsigned int texture;
+    
+    // Create texture ids.
+    glGenTextures(1, &texture);
+    
+    glBindTexture(GL_TEXTURE_2D, texture);
+    
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+    
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    
+    int width, height, nrChannels;
+    stbi_set_flip_vertically_on_load(true);   // vertical flip the texture
+    unsigned char *image = stbi_load(texFileName, &width, &height, &nrChannels, 0);
+    if (!image) {
+        printf("texture %s loading error ... \n", texFileName);
+    }
+    else printf("texture %s loaded\n", texFileName);
+    
+    GLenum format;
+    if (nrChannels == 1) format = GL_RED;
+    else if (nrChannels == 3) format = GL_RGB;
+    else if (nrChannels == 4) format = GL_RGBA;
+    
+    glBindTexture( GL_TEXTURE_2D, texture );
+    glTexImage2D( GL_TEXTURE_2D, 0, format, width, height, 0, format, GL_UNSIGNED_BYTE, image );
+    glGenerateMipmap(GL_TEXTURE_2D);
+    
+    return texture;
+}
+
+void render() {
+    
+    int i;
+    glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+    
+    currentTime = glfwGetTime(); // float 있었음
+    view = glm::lookAt(cameraPos, glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+    view = view * camArcBall.createRotationMatrix();
+    
+    
+    lightingShader->use();
+    lightingShader->setMat4("view", view);
+    
+    // 램프
+    lightingShader->setVec3("pointLight.position", smilepos);
+    lightingShader->setVec3("pointLight.ambient", 1.0f, 1.0f, 1.0f);
+    lightingShader->setVec3("pointLight.diffuse", 1.0f, 0.9f, 0.7f);
+    lightingShader->setVec3("pointLight.specular", 1.0f, 1.0f, 1.0f);
+    lightingShader->setFloat("pointLight.constant", 0.01f); // 작을 수록 밝아짐
+    lightingShader->setFloat("pointLight.linear", 6.0f); // 클수록 좁아짐 6.0f
+    lightingShader->setFloat("pointLight.quadratic", 0.1);
+    
+    // drawing a floor
+    glBindTexture(GL_TEXTURE_2D, floorMap);
+    model = glm::mat4(1.0);
+    model = glm::translate(model, glm::vec3(0.0f, -0.5f, 0.0f));
+    model = glm::rotate(model, glm::radians(90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
+    model = glm::scale(model, glm::vec3(19.0f, 19.0f, 0.0f));
+    lightingShader->setMat4("model", model);
+    plane->draw(lightingShader);
+    
+     // drawing a finish line
     glBindTexture(GL_TEXTURE_2D, finishTexture);
     model = glm::mat4(1.0);
-    model = glm::translate(model, glm::vec3(4.0f, -0.4f, 9.0f));
+    model = glm::translate(model, finishPos);
     model = glm::rotate(model, glm::radians(90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
     model = glm::scale(model, glm::vec3(1.0f, 1.0f, 0.2f));
-    shader->setMat4("model", model);
-    cube->draw(shader);
+    lightingShader->setMat4("model", model);
+    cube->draw(lightingShader);
 
     //drawing a sphere ( smile )
     model = glm::mat4(1.0f);
     model = glm::translate(model, smilepos);
     model = glm::rotate(model, glm::radians(90.0f), glm::vec3(0.0f, 1.0f, 0.0f));
-    model = glm::rotate(model, glm::radians(180.0f), glm::vec3(1.0f, 0.0f, 0.0f));
     model = glm::scale(model, glm::vec3(0.5f, 0.5f, 0.5f));
-    shader->setMat4("model", model);
-    
+    lightingShader->setMat4("model", model);
+
     glBindTexture(GL_TEXTURE_2D, characTexture);
     glBindVertexArray(smileVAO);
     glDrawArrays(GL_TRIANGLE_STRIP, 0, 3600);
     
-    //drawing a sphere ( item )
-    
+    //drawing items
     for (int i = 0; i < 7; i++) {
         model = glm::mat4(1.0f);
         model = glm::translate(model, glm::vec3(itemPos[i][0], 0.2f, itemPos[i][1]));
         model = glm::rotate(model,(float)(30.0f * M_PI / 90.0f) * (currentTime - lastTime), glm::vec3(0.0f, 1.0f, 0.0f));
         model = glm::scale(model, glm::vec3(0.25f, 0.25f, 0.25f));
-        shader->setMat4("model", model);
+        lightingShader->setMat4("model", model);
         glBindTexture(GL_TEXTURE_2D, itemTexture);
         glBindVertexArray(itemVAO);
         glDrawArrays(GL_TRIANGLE_STRIP, 0, 3600);
         
     }
-
-    // drawing a textured cube
-    glEnable(GL_STENCIL_TEST);
-    glStencilFunc(GL_ALWAYS, 1, 0xFF);
-    glStencilOp(GL_KEEP, GL_KEEP, GL_REPLACE);
-    glStencilMask(0xFF);
-    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
-//
-	glActiveTexture(GL_TEXTURE0);
-	glBindTexture(GL_TEXTURE_2D, cubeTexture);
-
+    
+    //drawing walls
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, cubeTexture);
     // drawing edge walls
         //top
     for (i = 0; i < 18 ; i++ ) {
         if (i == 5) continue;
         model = glm::mat4(1.0);
         model = glm::translate(model, glm::vec3(-9.0f+i, 0.0f, -9.0f));
-        shader->setMat4("model", model);
+        lightingShader->setMat4("model", model);
         glDrawArrays(GL_TRIANGLES, 0, 36);
-        cube->draw(shader);
+        cube->draw(lightingShader);
     }
         //bottom
     for (i = 0; i < 18 ; i++ ) {
         if (i == 12) continue;
         model = glm::mat4(1.0);
         model = glm::translate(model, glm::vec3(-8.0f+i, 0.0f, 9.0f));
-        shader->setMat4("model", model);
+        lightingShader->setMat4("model", model);
         glDrawArrays(GL_TRIANGLES, 0, 36);
-        cube->draw(shader);
+        cube->draw(lightingShader);
     }
         //left
     for (i = 0; i < 18 ; i++ ) {
         model = glm::mat4(1.0);
         model = glm::translate(model, glm::vec3(-9.0f, 0.0f, -8.0f+i));
-        shader->setMat4("model", model);
+        lightingShader->setMat4("model", model);
         glDrawArrays(GL_TRIANGLES, 0, 36);
-        cube->draw(shader);
+        cube->draw(lightingShader);
     }
         //right
     for (i = 0; i < 18 ; i++ ) {
         model = glm::mat4(1.0);
         model = glm::translate(model, glm::vec3(9.0f, 0.0f, -9.0f+i));
-        shader->setMat4("model", model);
+        lightingShader->setMat4("model", model);
         glDrawArrays(GL_TRIANGLES, 0, 36);
-        cube->draw(shader);
+        cube->draw(lightingShader);
     }
     
     //drawing inner walls
@@ -665,180 +779,110 @@ void render() {
     for (i = 0; i < 28 ; i++ ) {
         model = glm::mat4(1.0);
         model = glm::translate(model, glm::vec3(wallPos_NW[i][0], 0.0f, wallPos_NW[i][1]));
-        shader->setMat4("model", model);
+        lightingShader->setMat4("model", model);
         glDrawArrays(GL_TRIANGLES, 0, 36);
-        cube->draw(shader);
+        cube->draw(lightingShader);
     }
     //NE
     for (i = 0; i < 33 ; i++ ) {
         model = glm::mat4(1.0);
         model = glm::translate(model, glm::vec3(wallPos_NE[i][0], 0.0f, wallPos_NE[i][1]));
-        shader->setMat4("model", model);
+        lightingShader->setMat4("model", model);
         glDrawArrays(GL_TRIANGLES, 0, 36);
-        cube->draw(shader);
+        cube->draw(lightingShader);
     }
     //SW
     for (i = 0; i < 31 ; i++ ) {
         model = glm::mat4(1.0);
         model = glm::translate(model, glm::vec3(wallPos_SW[i][0], 0.0f, wallPos_SW[i][1]));
-        shader->setMat4("model", model);
+        lightingShader->setMat4("model", model);
         glDrawArrays(GL_TRIANGLES, 0, 36);
-        cube->draw(shader);
+        cube->draw(lightingShader);
     }
     //SE
     for (i = 0; i < 36 ; i++ ) {
         model = glm::mat4(1.0);
         model = glm::translate(model, glm::vec3(wallPos_SE[i][0], 0.0f, wallPos_SE[i][1]));
-        shader->setMat4("model", model);
+        lightingShader->setMat4("model", model);
         glDrawArrays(GL_TRIANGLES, 0, 36);
-        cube->draw(shader);
+        cube->draw(lightingShader);
     }
-    glfwSwapBuffers(mainWindow);
-}
-
-// glAllInit();
-GLFWwindow *glAllInit()
-{
-	GLFWwindow *window;
-
-	// glfw: initialize and configure
-	if (!glfwInit()) {
-		printf("GLFW initialisation failed!");
-		glfwTerminate();
-		exit(-1);
-	}
-	glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
-	glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
-	glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
-	glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
-
-	// glfw window creation
-	window = glfwCreateWindow(SCR_WIDTH, SCR_HEIGHT, "The Maze Runner", NULL, NULL);
-	if (window == NULL) {
-		cout << "Failed to create GLFW window" << std::endl;
-		glfwTerminate();
-		exit(-1);
-	}
-	glfwMakeContextCurrent(window);
-	glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
-	glfwSetKeyCallback(window, key_callback);
-	glfwSetMouseButtonCallback(window, mouse_button_callback);
-	glfwSetCursorPosCallback(window, cursor_position_callback);
-	glfwSetScrollCallback(window, scroll_callback);
-
-	// OpenGL states
-	glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
-
-	// Allow modern extension features
-	glewExperimental = GL_TRUE;
-	if (glewInit() != GLEW_OK) {
-		cout << "GLEW initialisation failed!" << endl;
-		glfwDestroyWindow(window);
-		glfwTerminate();
-		exit(-1);
-	}
-
-	return window;
-}
-
-// utility function for loading a 2D texture from file
-// ---------------------------------------------------
-unsigned int loadTexture(char const * path)
-{
-	unsigned int textureID;
-	glGenTextures(1, &textureID);
-
-	int width, height, nrComponents;
-	unsigned char *data = stbi_load(path, &width, &height, &nrComponents, 0);
-	if (data)
-	{
-		GLenum format;
-		if (nrComponents == 1)
-			format = GL_RED;
-		else if (nrComponents == 3)
-			format = GL_RGB;
-		else if (nrComponents == 4)
-			format = GL_RGBA;
-		else {
-			format = GL_RGBA;
-		}
-
-		glBindTexture(GL_TEXTURE_2D, textureID);
-		glTexImage2D(GL_TEXTURE_2D, 0, format, width, height, 0, format, GL_UNSIGNED_BYTE, data);
-		glGenerateMipmap(GL_TEXTURE_2D);
-
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-
-		stbi_image_free(data);
-	}
-	else
-	{
-		std::cout << "Texture failed to load at path: " << path << std::endl;
-		stbi_image_free(data);
-	}
-
-	return textureID;
+    
+    if (!gamefinish) {
+        char s1[100];
+        text -> RenderText("timer : ", 360.0f, 550.0f, 1.0f, glm::vec3(1.0f, 1.0f, 1.0f));
+        currentTime = (float)glfwGetTime();
+        playTime = currentTime - startTime;
+        sprintf(s1, "%.01f", playTime);
+        text -> RenderText(s1, 500.0f, 550.0f, 1.0f, glm::vec3(1.0f, 1.0f, 1.0f));
+    }
+    else {
+        char s2[100];
+        text -> RenderText("success!", 80.0f, 100.0f, 1.0f, glm::vec3(1.0f, 1.0f, 1.0f));
+        sprintf(s2, "%.01f", playTime);
+        text -> RenderText(s2, 280.0f, 100.0f, 1.0f, glm::vec3(1.0f, 1.0f, 1.0f));
+        text -> RenderText("sec", 380.0f, 100.0f, 1.0f, glm::vec3(1.0f, 1.0f, 1.0f));
+    }
+    
 }
 
 
-// glfw: whenever the window size changed (by OS or user resize) this callback function executes
-// ---------------------------------------------------------------------------------------------
 void framebuffer_size_callback(GLFWwindow* window, int width, int height)
 {
-	// make sure the viewport matches the new window dimensions; note that width and
-	// height will be significantly larger than specified on retina displays.
-	glViewport(0, 0, width, height);
-	SCR_WIDTH = width;
-	SCR_HEIGHT = height;
+    glViewport(0, 0, width, height);
+    SCR_WIDTH = width;
+    SCR_HEIGHT = height;
 }
 
 void key_callback(GLFWwindow *window, int key, int scancode, int action, int mods) {
-	if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS) {
-		glfwSetWindowShouldClose(window, true);
-	}
-	else if (key == GLFW_KEY_R && action == GLFW_PRESS) {
-		camArcBall.init(SCR_WIDTH, SCR_HEIGHT, arcballSpeed, true, true);
-		cameraPos = cameraOrigPos;
+    if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS) {
+        glfwSetWindowShouldClose(window, true);
+    }
+    else if (key == GLFW_KEY_R && action == GLFW_PRESS) {
+        camArcBall.init(SCR_WIDTH, SCR_HEIGHT, arcballSpeed, true, true);
         smilepos[0] = -4.0f;
         smilepos[1] = 0.0f;
         smilepos[2] = -9.0f;
-	}
-    else if (key == GLFW_KEY_LEFT) {
+        startTime = glfwGetTime();
+    }
+    else if (key == GLFW_KEY_LEFT && gamefinish == false) {
         walltouch = wallcheck(smilepos[0] - 1.0f, round(smilepos[2]));
         if (!walltouch) smilepos[0] -= onestep;
-        if (itemcheck(smilepos[0], smilepos[2])) lighton();
+        if (itemcheck(smilepos[0], smilepos[2])){
+            nowTime = glfwGetTime();
+            targetTime = startTime + 2.0f;
+            lighton();
+
+        }
     }
-    else if (key == GLFW_KEY_RIGHT) {
+    else if (key == GLFW_KEY_RIGHT && gamefinish == false) {
         walltouch = wallcheck(smilepos[0] + 1.0f, round(smilepos[2]));
         if (!walltouch) smilepos[0] += onestep;
-        if (itemcheck(smilepos[0], smilepos[2])) lighton();
+        if (itemcheck(smilepos[0], smilepos[2])) {
+            lighton();
+
+        }
     }
-    else if (key == GLFW_KEY_DOWN ) {
+    else if (key == GLFW_KEY_DOWN && gamefinish == false) {
         walltouch = wallcheck(round(smilepos[0]), smilepos[2] + 1.0f);
         if (!walltouch) smilepos[2] += onestep;
-        if (itemcheck(smilepos[0], smilepos[2])) lighton();
+        if (itemcheck(smilepos[0], smilepos[2])) {
+            lighton();
+        }
+        if (smilepos[0] == finishPos[0] && smilepos[2] == finishPos[2]) {
+            finish();
+        }
+
     }
-    else if (key == GLFW_KEY_UP) {
+    else if (key == GLFW_KEY_UP && gamefinish == false) {
         walltouch = wallcheck(round(smilepos[0]), smilepos[2] - 1.0f);
         if (!walltouch) smilepos[2] -= onestep;
-        if (itemcheck(smilepos[0], smilepos[2])) lighton();
+        if (itemcheck(smilepos[0], smilepos[2])) {
+            lighton();
+        }
     }
 }
 
-void mouse_button_callback(GLFWwindow *window, int button, int action, int mods) {
-	camArcBall.mouseButtonCallback(window, button, action, mods);
-}
-
-void cursor_position_callback(GLFWwindow *window, double x, double y) {
-	camArcBall.cursorCallback(window, x, y);
-}
-
-void scroll_callback(GLFWwindow *window, double xoffset, double yoffset) {
-	cameraPos[2] -= (yoffset * 0.5);
-}
 
 //벽을 만나면 true를 return. 벽으로 못 가게.
 bool wallcheck(float x, float z) {
@@ -896,13 +940,36 @@ bool wallcheck(float x, float z) {
 bool itemcheck(float x, float z) {
     for (int i = 0; i < 7; i++) {
         if (itemPos[i][0] == x && itemPos[i][1] == z) {
+            itemPos[i][0] = 900;
+            itemPos[i][1] = 900;
             return true;
         }
     }
     return false;
 }
-
-// 3초간 불 켠다
 void lighton() {
-    cout << "아이템에 닿았음" << endl;
+    lightingShader->use();
+    ambient[0] += 0.015f;
+    ambient[1] += 0.015f;
+    ambient[2] += 0.015f;
+    diffuse[0] += 0.02f;
+    diffuse[1] += 0.02f;
+    diffuse[2] += 0.02f;
+
+    lightingShader->setVec3("direcLight.direction", -0.1f, -1.0f, -0.1f);
+    lightingShader->setVec3("direcLight.ambient", ambient);
+    lightingShader->setVec3("direcLight.diffuse", diffuse);
 }
+
+void finish() {
+    gamefinish = true;
+    
+}
+void mouse_button_callback(GLFWwindow *window, int button, int action, int mods) {
+        camArcBall.mouseButtonCallback( window, button, action, mods );
+}
+
+void cursor_position_callback(GLFWwindow *window, double x, double y) {
+        camArcBall.cursorCallback( window, x, y );
+}
+

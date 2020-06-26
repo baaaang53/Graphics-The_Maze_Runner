@@ -35,31 +35,29 @@ in vec2 TexCoords;
 
 uniform vec3 viewPos;
 uniform vec3 pointCola;
-uniform DirLight dirLight[4];
+//uniform DirLight dirLight[4];
+uniform DirLight direcLight;
 uniform PointLight pointLight;
+uniform PointLight finishLight;
 uniform Material material;
-
+uniform bool LightON;
 
 // function prototypes
 vec3 CalcDirLight(DirLight light, vec3 normal, vec3 viewDir);
 vec3 CalcPointLight(PointLight light, vec3 normal, vec3 fragPos, vec3 viewDir, vec3 pointcola);
+vec3 LightOn(DirLight light, vec3 normal, vec3 viewDir);
 
 void main()
 {
     // properties
     vec3 norm = normalize(Normal);
     vec3 viewDir = normalize(viewPos - FragPos);
-    
 
-    // point lights
-    vec3 result = CalcPointLight(pointLight, norm, FragPos, viewDir, pointCola);
-    
-    for (int i = 0; i < 4; i++) {
-        result += CalcDirLight(dirLight[i], norm, viewDir);
-    }
-    
+    vec3 result = CalcDirLight(direcLight, norm, viewDir);
+    result += CalcPointLight(pointLight, norm, FragPos, viewDir, pointCola);
     FragColor = vec4(result, 1.0);
 }
+
 
 // calculates the color when using a directional light.
 vec3 CalcDirLight(DirLight light, vec3 normal, vec3 viewDir)
@@ -70,11 +68,14 @@ vec3 CalcDirLight(DirLight light, vec3 normal, vec3 viewDir)
     // specular shading
     vec3 reflectDir = reflect(-lightDir, normal);
     float spec = pow(max(dot(viewDir, reflectDir), 0.0), material.shininess);
+    
+    vec3 ambient, diffuse, specular;
     // combine results
-    vec3 ambient = light.ambient * vec3(texture(material.diffuse, TexCoords));
-    vec3 diffuse = light.diffuse * diff * vec3(texture(material.diffuse, TexCoords));
-    vec3 specular = light.specular * spec * vec3(texture(material.specular, TexCoords));
-    return (ambient + diffuse + specular);
+    ambient = light.ambient * vec3(texture(material.diffuse, TexCoords));
+    diffuse = light.diffuse * diff * vec3(texture(material.diffuse, TexCoords));
+    specular = light.specular * spec * vec3(texture(material.specular, TexCoords));
+        
+     return (ambient + diffuse + specular);
 }
 
 // calculates the color when using a point light.
