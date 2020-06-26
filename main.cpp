@@ -20,6 +20,7 @@
 #include <stb_image.h>
 #include <unistd.h>
 #include <time.h>
+#include <mass.h>
 
  
 
@@ -41,8 +42,8 @@ bool itemcheck(float x, float z);
 void lighton();
 void waitandlightoff();
 void finish();
-
-
+void particleInit(int i);
+void updateACTIVEData();
 
 float startTime, playTime, nowTime, targetTime, currentTime;
 
@@ -50,15 +51,28 @@ float startTime, playTime, nowTime, targetTime, currentTime;
 GLFWwindow *mainWindow = NULL;
 Shader *lightingShader = NULL;
 Shader *textShader = NULL;
+Shader *particleShader = NULL;
 
 unsigned int SCR_WIDTH = 600;
 unsigned int SCR_HEIGHT = 600;
+
+int nParticle = 500;
+Mass **particle;
 
 Plane *plane;
 Text *text;
 Cube *cube;
 glm::mat4 projection, view, model;
 
+enum RenderMode { INIT, ACTIVE, INACTIVE };
+RenderMode *renderMode;
+float timeT = 0.0f;                     // current time (in sec)
+float deltaT = 1.0f / 30.0f;
+
+float RNG(float min, float max)
+{
+    return min + rand() / (float)RAND_MAX * (max - min);
+}
 
 // for sphere
 float theta =  2 * M_PI / ANGLE_NUM;
@@ -77,7 +91,7 @@ unsigned int smileVBO[4];
 unsigned int smileVAO;
 
 glm::vec3 smilepos(-4.0f, 0.0f, -9.0f);
-glm::vec3 ambient(0.0f, 0.0f, 0.0f);
+glm::vec3 ambient(0.015f, 0.015f, 0.015f);
 glm::vec3 diffuse(0.0f, 0.0f, 0.0f);
 glm::vec3 finishPos(4.0f, -0.4f, 9.0f);
 
@@ -96,6 +110,13 @@ float itemPos[7][2] = {
     {6.0f, 8.0f},
     {1.0f, 6.0f},
     {1.0f, 0.0f}
+};
+
+float fireColor[4][3] = {
+    {1.0f, 0.2f, 0.2f},
+    {0.2f, 1.0f, 0.2f},
+    {0.2f, 0.2f, 1.0f},
+    {1.0f, 1.0f, 0.2f}
 };
 
 // for arcball
@@ -130,16 +151,19 @@ unsigned int cSize = sizeof(colors);
 float lastTime = 0.0f;
 
 // for texture
-static unsigned int itemTexture,floorMap, cubeTexture, characTexture, finishTexture, victoryTexture;  // texture ids for diffuse and specular maps
+static unsigned int itemTexture,floorMap, cubeTexture, characTexture, finishTexture;  // texture ids for diffuse and specular maps
 
 int main()
 {
+    srand(0);
+    
     mainWindow = glAllInit();
     
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     // shader loading and compile (by calling the constructor)
     lightingShader = new Shader("objectlight.vs", "objectlight.fs");
+    particleShader = new Shader("particle.vs", "particle.fs");
     textShader = new Shader("text.vs", "text.frag");
     text = new Text("fonts/arial.ttf", textShader, SCR_WIDTH, SCR_HEIGHT);
     
@@ -542,6 +566,18 @@ int main()
     // projection and view matrix
     projection = glm::perspective(glm::radians(45.0f),
                                   (float)SCR_WIDTH / (float)SCR_HEIGHT, 0.1f, 100.0f);
+    
+    particleShader->use();
+    particleShader->setMat4("projection", projection);
+
+    particle = new Mass*[nParticle];
+    renderMode = new RenderMode[nParticle];
+    for (int i = 0; i < nParticle; i++) {
+        particleInit(i);
+    }
+    
+    updateACTIVEData();
+    
     lightingShader->use();
     lightingShader->setMat4("projection", projection);
     
@@ -552,7 +588,6 @@ int main()
     characTexture = loadTexture("smile.png");
     finishTexture = loadTexture("finish.png");
     itemTexture = loadTexture("shiny.png");
-    victoryTexture = loadTexture("victory.png");
     
     // transfer texture id to fragment shader
     lightingShader->use();
@@ -574,8 +609,8 @@ int main()
     lightingShader->setVec3("finishLight.position", finishPos);
     lightingShader->setVec3("finishLight.ambient", 1.0f, 1.0f, 1.0f);
     lightingShader->setVec3("finishLight.diffuse", 1.0f, 0.9f, 0.7f);
-    lightingShader->setFloat("finishLight.constant", 3.0f); // 작을 수록 밝아짐
-    lightingShader->setFloat("finishLight.linear", 10.0f); // 클수록 좁아짐
+    lightingShader->setFloat("finishLight.constant", 1.0f); // 작을 수록 밝아짐
+    lightingShader->setFloat("finishLight.linear", 11.0f); // 클수록 좁아짐
     lightingShader->setFloat("finishLight.quadratic", 1.0f);
 
     plane = new Plane();
@@ -680,6 +715,14 @@ void render() {
     view = glm::lookAt(cameraPos, glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
     view = view * camArcBall.createRotationMatrix();
     
+    updateACTIVEData();
+    // draw particle
+    particleShader->use();
+    particleShader->setMat4("view", view);
+    model = glm::mat4(1.0);
+    particleShader->setMat4("model", model);
+    int u = rand() % 4;
+    for (int i = 0; i < nParticle; i++) particle[i]->draw(particleShader, fireColor[u][0], fireColor[u][1], fireColor[u][2]);
     
     lightingShader->use();
     lightingShader->setMat4("view", view);
@@ -818,10 +861,16 @@ void render() {
     }
     else {
         char s2[100];
-        text -> RenderText("success!", 80.0f, 100.0f, 1.0f, glm::vec3(1.0f, 1.0f, 1.0f));
+        text -> RenderText("Nightmare Escaped!", 80.0f, 350.0f, 1.0f, glm::vec3(1.0f, 1.0f, 1.0f));
         sprintf(s2, "%.01f", playTime);
-        text -> RenderText(s2, 280.0f, 100.0f, 1.0f, glm::vec3(1.0f, 1.0f, 1.0f));
-        text -> RenderText("sec", 380.0f, 100.0f, 1.0f, glm::vec3(1.0f, 1.0f, 1.0f));
+        text -> RenderText(s2, 350.0f, 200.0f, 1.0f, glm::vec3(1.0f, 1.0f, 1.0f));
+        text -> RenderText("sec", 450.0f, 200.0f, 1.0f, glm::vec3(1.0f, 1.0f, 1.0f));
+        for (int i = 0; i < nParticle; i++) {
+            if (renderMode[i]== INIT) {
+                renderMode[i] = INACTIVE;
+                timeT = 0.0f;
+            }
+        }
     }
     
 }
@@ -849,8 +898,6 @@ void key_callback(GLFWwindow *window, int key, int scancode, int action, int mod
         walltouch = wallcheck(smilepos[0] - 1.0f, round(smilepos[2]));
         if (!walltouch) smilepos[0] -= onestep;
         if (itemcheck(smilepos[0], smilepos[2])){
-            nowTime = glfwGetTime();
-            targetTime = startTime + 2.0f;
             lighton();
 
         }
@@ -936,7 +983,6 @@ bool wallcheck(float x, float z) {
     return false;
 }
 
-//item을 만나면 true를 ㄱeturn.
 bool itemcheck(float x, float z) {
     for (int i = 0; i < 7; i++) {
         if (itemPos[i][0] == x && itemPos[i][1] == z) {
@@ -949,9 +995,9 @@ bool itemcheck(float x, float z) {
 }
 void lighton() {
     lightingShader->use();
-    ambient[0] += 0.015f;
-    ambient[1] += 0.015f;
-    ambient[2] += 0.015f;
+    ambient[0] += 0.01f;
+    ambient[1] += 0.01f;
+    ambient[2] += 0.01f;
     diffuse[0] += 0.02f;
     diffuse[1] += 0.02f;
     diffuse[2] += 0.02f;
@@ -973,3 +1019,40 @@ void cursor_position_callback(GLFWwindow *window, double x, double y) {
         camArcBall.cursorCallback( window, x, y );
 }
 
+void particleInit(int i) {
+    // particle initialization
+    float mass = RNG(1, 1.5);
+    particle[i] = new Mass(mass);
+    
+    particle[i] -> setPosition(0.0f, 13.0f, 4.5f);
+    particle[i] -> setVelocity(0.0f, 0.0f, 0.0f);
+    particle[i] -> setAcceleration(0.0f, 0.0f, 0.0f);
+
+    renderMode[i] = INIT;
+}
+
+void updateACTIVEData() {
+    int max_fire = 5;    // # maximum fired particles per frame
+    int cur_fire = 0;
+    for (int i = 0; i < nParticle; i++) {
+        if (cur_fire < max_fire && renderMode[i] == INACTIVE) {
+            particleInit(i);
+            float xForce = RNG(-20, 20);
+            float yForce = RNG(230, 250);
+            float zForce = RNG(-20, 20);
+            
+            particle[i] -> euler(timeT, deltaT, xForce, yForce, zForce);
+
+            renderMode[i] = ACTIVE;
+            cur_fire++;
+        }
+        else if (renderMode[i] == ACTIVE) {
+            particle[i]->euler(timeT, deltaT, 0.0, 0.0, 0.0);
+            if (particle[i]->p[1] < -1.0f) {
+                particle[i]->p[1] = -1.0f;
+                renderMode[i] = INACTIVE;
+            }
+        }
+    }
+    timeT += deltaT;
+}
