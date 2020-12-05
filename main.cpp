@@ -22,7 +22,6 @@
 #include <time.h>
 #include <mass.h>
 
- 
 
 using namespace std; 
 
@@ -40,7 +39,6 @@ void render();
 bool wallcheck(float x, float z);
 bool itemcheck(float x, float z);
 void lighton();
-void waitandlightoff();
 void finish();
 void particleInit(int i);
 void updateACTIVEData();
@@ -598,18 +596,11 @@ int main()
     lightingShader->setVec3("viewPos", cameraPos);
     lightingShader->setVec3("pointCola", pointcol);
 
-    // point light
-//    lightingShader->setVec3("pointLight.position", smilepos);
-//    lightingShader->setVec3("pointLight.ambient", 1.0f, 1.0f, 1.0f);
-//    lightingShader->setVec3("pointLight.diffuse", 1.0f, 0.9f, 0.7f);
-//    lightingShader->setVec3("pointLight.specular", 1.0f, 1.0f, 1.0f);
-//    lightingShader->setFloat("pointLight.constant", 0.2f); // 작을 수록 밝아짐
-//    lightingShader->setFloat("pointLight.linear", 8.0f); // 클수록 좁아짐
-//    lightingShader->setFloat("pointLight.quadratic", 0.1);
+
     lightingShader->setVec3("finishLight.position", finishPos);
     lightingShader->setVec3("finishLight.ambient", 1.0f, 1.0f, 1.0f);
     lightingShader->setVec3("finishLight.diffuse", 1.0f, 0.9f, 0.7f);
-    lightingShader->setFloat("finishLight.constant", 1.0f); // 작을 수록 밝아짐
+    lightingShader->setFloat("finishLight.constant", 3.0f); // 작을 수록 밝아짐
     lightingShader->setFloat("finishLight.linear", 11.0f); // 클수록 좁아짐
     lightingShader->setFloat("finishLight.quadratic", 1.0f);
 
@@ -875,7 +866,6 @@ void render() {
     
 }
 
-
 void framebuffer_size_callback(GLFWwindow* window, int width, int height)
 {
     glViewport(0, 0, width, height);
@@ -905,6 +895,7 @@ void key_callback(GLFWwindow *window, int key, int scancode, int action, int mod
     else if (key == GLFW_KEY_RIGHT && gamefinish == false) {
         walltouch = wallcheck(smilepos[0] + 1.0f, round(smilepos[2]));
         if (!walltouch) smilepos[0] += onestep;
+        
         if (itemcheck(smilepos[0], smilepos[2])) {
             lighton();
 
@@ -995,12 +986,12 @@ bool itemcheck(float x, float z) {
 }
 void lighton() {
     lightingShader->use();
-    ambient[0] += 0.01f;
-    ambient[1] += 0.01f;
-    ambient[2] += 0.01f;
-    diffuse[0] += 0.02f;
-    diffuse[1] += 0.02f;
-    diffuse[2] += 0.02f;
+    ambient[0] += 0.007f;
+    ambient[1] += 0.007f;
+    ambient[2] += 0.007f;
+    diffuse[0] += 0.01f;
+    diffuse[1] += 0.01f;
+    diffuse[2] += 0.01f;
 
     lightingShader->setVec3("direcLight.direction", -0.1f, -1.0f, -0.1f);
     lightingShader->setVec3("direcLight.ambient", ambient);
